@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
+import sys
 from math import ceil, floor
+from way_cooler_client.way_cooler import *
 
 try:
     # python 3
@@ -20,10 +22,8 @@ class Node():
 class Application(ttk.Treeview):
     def __init__(self, master=None):
         ttk.Treeview.__init__(self, master)
-        self.pack()
+        self.pack(fill=tk.BOTH, expand=True)
         self.make_root()
-        # this is all test stuff, remove and replace with loop reading json
-
 
     def make_root(self):
         self.insert("", 0, "root", text="Root", open=True)
@@ -50,10 +50,10 @@ class Application(ttk.Treeview):
     def add_container(self, parent, layout_type):
         text = "Container w/ layout %s" % layout_type
         # hacky, get the name from the parent
-        parent_name = parent.name.split()[-1]
+        parent_name = parent.name
         container_node = Node(text, [])
         parent.children.append(container_node)
-        name = self.insert("Workspace %s" % parent_name, len(parent.children), text=text,
+        name = self.insert(parent_name, len(parent.children), text=text,
                     open=True)
         container_node.name = name
         return container_node
@@ -80,18 +80,33 @@ root = tk.Tk()
 app = Application(master=root)
 app.master.title("Tree visualization example")
 
-def update_app():
-    clear()
-    output1 = app.add_output()
-    output2 = app.add_output()
-    app._workspace_1 = app.add_workspace(output1, "Web")
-    app._workspace_2 = app.add_workspace(output2, "Work")
-    app._container_1 = app.add_container(app._workspace_1, "horizontal")
-    app._container_2 = app.add_container(app._workspace_1, "vertical")
-    app._container_3 = app.add_container(app._workspace_2, "vertical")
-    app.add_view(app._container_1, "Firefox")
-    app.add_view(app._container_2, "Terminal")
-    app.add_view(app._container_3, "Terminal")
+def update_app(tree):
+    """Takes a json representation of the tree and lays it out
+    in the view"""
+    global app
+    def recurse_add_container(json, parent):
+        if not json:
+            return
+        if isinstance(json, list):
+            for child in json:
+                recurse_add_container(child, parent)
+        elif isinstance(json, dict):
+            for key in json.keys():
+                if key.startswith("Output"):
+                    parent = app.add_output()
+                elif key.startswith("Workspace"):
+                    # need to update json from rust side
+                    parent = app.add_workspace(parent, key.split()[-1])
+                elif key.startswith("Container"):
+                    # need to update json from rust side
+                    parent = app.add_container(parent, key.split()[-1])
+                else:
+                    app.add_view(parent, json[key])
+                    continue
+                recurse_add_container(json[key], parent)
+        else:
+            app.add_view(parent, json)
+    recurse_add_container(tree, app._root)
 
 def clear():
     global app;
@@ -99,16 +114,32 @@ def clear():
     app = Application(master=root)
 
 running = True
+if len(sys.argv) > 1:
+    path = sys.argv[1]
+else:
+    path = SOCKET_ROOT_PATH
+    if path is None:
+        print("Please either run from within Way-Cooler, or specify the socket",
+        "path name as the first arg to this program")
+        sys.exit(1)
+wm = WayCooler(path)
+tree = None
 def update():
+    global tree
     from time import sleep
     while running:
-        update_app()
-        app.configure(height=app.node_count())
-        sleep(1)
+        sleep(.1)
+        buffer = wm.tree_layout
+        if buffer == tree:
+            continue
+        print("got: {}".format(buffer))
+        tree = buffer
+        clear()
+        update_app(tree['Root'])
+        app.configure(height=app.node_count() * 20)
 
 from threading import Thread
 
 update_thread = Thread(target=update).start()
-#app.after(100, update)
 app.mainloop()
 running = False
