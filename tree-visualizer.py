@@ -1,8 +1,12 @@
 #!/usr/bin/python
 
 import sys
+import json
 from math import ceil, floor
-from way_cooler_client.way_cooler import *
+from pydbus import SessionBus
+
+BUS = SessionBus()
+LAYOUT = BUS.get(bus_name='org.way-cooler', object_path='/org/way_cooler/Layout')
 
 try:
     # python 3
@@ -114,22 +118,13 @@ def clear():
     app = Application(master=root)
 
 running = True
-if len(sys.argv) > 1:
-    path = sys.argv[1]
-else:
-    path = SOCKET_ROOT_PATH
-    if path is None:
-        print("Please either run from within Way-Cooler, or specify the socket",
-        "path name as the first arg to this program")
-        sys.exit(1)
-wm = WayCooler(path)
 tree = None
 def update():
     global tree
     from time import sleep
     while running:
         sleep(.1)
-        buffer = wm.tree_layout
+        buffer = json.loads(LAYOUT.Debug())
         if buffer == tree:
             continue
         print("got: {}".format(buffer))
